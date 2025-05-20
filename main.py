@@ -3,6 +3,7 @@ import requests, re
 from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
 from playwright.sync_api import sync_playwright
+import os
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
@@ -22,7 +23,8 @@ def estrai_email(url):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            context = browser.new_context()
+            page = context.new_page()
             page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
             mailto_links = page.eval_on_selector_all(
@@ -39,6 +41,22 @@ def estrai_email(url):
             email_match = re.search(EMAIL_REGEX, text)
             if email_match:
                 return email_match.group(0)
+
+            contact_links = page.eval_on_selector_all(
+                "a",
+                '''
+                elements => elements
+                    .map(el => el.href)
+                    .filter(href => href && ['contatti', 'contact', 'contacts'].some(k => href.toLowerCase().includes(k)))
+                '''
+            )
+            if contact_links:
+                page.goto(contact_links[0], timeout=60000, wait_until="domcontentloaded")
+                content = page.content()
+                text = BeautifulSoup(content, "html.parser").get_text()
+                email_match = re.search(EMAIL_REGEX, text)
+                if email_match:
+                    return email_match.group(0)
 
             browser.close()
     except Exception as e:
@@ -60,4 +78,5 @@ def email():
         return jsonify({"email": "", "url": ""})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
